@@ -2,9 +2,14 @@
 
 ![InternVLA-A1.5 teaser](assets/teaser.png)
 
-[![Code](https://img.shields.io/badge/Code-GitHub-black?logo=github)](https://github.com/InternRobotics/InternVLA-A1.5)
-[![Data](https://img.shields.io/badge/Data-HuggingFace-blue?logo=huggingface)](https://huggingface.co/datasets/InternRobotics/InternData-A1)
+[![Code](https://img.shields.io/badge/Code-GitHub-black?logo=github)](https://github.com/InternRobotics/InternVLA-A-series)
+[![Project Page](https://img.shields.io/badge/Code-GitHub-black?logo=github)](https://github.com/InternRobotics/InternVLA-A-series)
+[![HuggingFace](https://img.shields.io/badge/Data-HuggingFace-blue?logo=huggingface)](https://huggingface.co/collections/InternRobotics/internvla-a15)
+[![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/collections/InternRobotics/InternVLA-A15)
 [![License](https://img.shields.io/badge/License-CC_BY--NC--SA_4.0-lightgrey.svg)](LICENSE)
+
+> [!NOTE]
+> The InternVLA-A1 code has moved to the `InternVLA-A1` branch.
 
 ## Highlights
 
@@ -24,10 +29,10 @@
 
 | Model | HuggingFace | ModelScope |
 |-------|-------------|------------|
-| InternVLA-A1.5-base | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/hxma/InternVLA-A1.5-base) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-base) |
-| InternVLA-A1.5-RoboTwin | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/hxma/InternVLA-A1.5-Robotwin) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-RoboTwin) |
-| InternVLA-A1.5-Libero | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/hxma/InternVLA-A1.5-Libero) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-Libero) |
-| InternVLA-A1.5-DOMINO | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/hxma/InternVLA-A1.5-DOMINO) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-DOMINO) |
+| InternVLA-A1.5-base | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/InternRobotics/InternVLA-A1.5-base) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-base) |
+| InternVLA-A1.5-RoboTwin | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/InternRobotics/InternVLA-A1.5-RoboTwin) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-RoboTwin) |
+| InternVLA-A1.5-Libero | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/InternRobotics/InternVLA-A1.5-Libero) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-Libero) |
+| InternVLA-A1.5-DOMINO | [![HuggingFace](https://img.shields.io/badge/HuggingFace-Model-blue?logo=huggingface)](https://huggingface.co/InternRobotics/InternVLA-A1.5-DOMINO) | [![ModelScope](https://img.shields.io/badge/ModelScope-Model-blue?logo=modelscope)](https://www.modelscope.cn/models/InternRobotics/InternVLA-A1.5-DOMINO) |
 
 ## TODO List
 
@@ -117,11 +122,18 @@ All code within this repo is released under [CC BY-NC-SA 4.0](https://creativeco
   year         = {2026},
   howpublished = {\url{https://github.com/InternRobotics/InternVLA-A1.5}}
 }
+
+@article{internvla_a1,
+  title={InternVLA-A1: Unifying Understanding, Generation and Action for Robotic Manipulation},
+  author={Cai, Junhao and Cai, Zetao and Cao, Jiafei and Chen, Yilun and He, Zeyu and Jiang, Lei and Li, Hang and Li, Hengjie and Li, Yang and Liu, Yufei and others},
+  journal={arXiv preprint arXiv:2601.02456},
+  year={2026}
+}
 ```
 
 ## Contact
 
-If you have any questions, feel free to submit GitHub issues or email jiazeng.ai@gmail.com.
+If you have any questions, feel free to submit GitHub issues or email mahaoxiang@pjlab.org.cn.
 
 ## Acknowledgments
 
