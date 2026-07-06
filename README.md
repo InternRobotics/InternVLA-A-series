@@ -11,6 +11,10 @@
 [![Data](https://img.shields.io/badge/Data-HuggingFace-blue?logo=huggingface)](https://huggingface.co/datasets/InternRobotics/InternData-A1)
 [![Website](https://img.shields.io/badge/Website-Pages-blue.svg)](https://internrobotics.github.io/internvla-a1.github.io/)
 
+## Intel XPU Support
+
+InternVLA-A1 inference has been validated on Intel XPU (Intel GPUs) and runs **without any code changes** to this repository. Install a PyTorch build with Intel XPU support and select the `xpu` device at runtime.
+
 ## 🔥 Highlights
 > **InternVLA-A1** unifies scene ***understanding***, visual foresight ***generation***, and ***action*** execution into a single framework.
 
