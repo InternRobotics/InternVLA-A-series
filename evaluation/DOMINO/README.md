@@ -45,7 +45,7 @@ bash evaluation/DOMINO/eval.sh \
 
 Arguments:
 
-- `checkpoint`: checkpoint `pretrained_model` directory.
+- `checkpoint`: checkpoint `pretrained_model` directory, you can download our fine-tuned ckpt on https://huggingface.co/InternRobotics/InternVLA-A1.5-DOMINO.
 - `output_path`: directory where replay videos and metrics are written.
 - `task_config`: DOMINO task config, such as `demo_clean_dynamic` or `demo_random_dynamic`.
 - `task_idx`: index into `TASK_NAMES` in `evaluation/DOMINO/inference.py`.
