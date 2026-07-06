@@ -57,7 +57,7 @@ The script auto-detects free GPUs (≥ `GPU_MEM_FREE_THRESHOLD_MB` free, default
 
 Common env-var overrides:
 
-- `CKPT_PATH` *(required)*: checkpoint path for the policy server.
+- `CKPT_PATH` *(required)*: checkpoint path for the policy server, you can download our fine-tuned ckpt on https://huggingface.co/InternRobotics/InternVLA-A1.5-Libero.
 - `LIBERO_HOME` *(required)*: LIBERO repo root.
 - `SERVER_ENV` / `CLIENT_ENV` *(defaults `lerobot_lab` / `libero_venv`)*: conda envs.
 - `CONDA_ROOT` *(default `$HOME/miniconda3`)*.

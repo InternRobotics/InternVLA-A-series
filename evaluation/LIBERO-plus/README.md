@@ -72,7 +72,7 @@ GPU_IDS=0,1,2,3 SHARDS_PER_SUITE=8 bash evaluation/LIBERO-plus/run_eval_libero_p
 
 Common env-var overrides:
 
-- `CKPT_PATH` *(required)*: checkpoint path for the policy server.
+- `CKPT_PATH` *(required)*: checkpoint path for the policy server, you can download our fine-tuned ckpt on https://huggingface.co/InternRobotics/InternVLA-A1.5-Libero.
 - `LIBERO_HOME` *(required)*: LIBERO-plus repo root.
 - `SERVER_ENV` / `CLIENT_ENV` *(defaults `lerobot_lab` / `libero_plus`)*: conda envs.
 - `CONDA_ROOT` *(default `$HOME/miniconda3`)*.
