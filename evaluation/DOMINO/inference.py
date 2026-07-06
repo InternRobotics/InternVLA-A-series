@@ -426,7 +426,7 @@ class InferenceArgs:
     task_config: str = "demo_clean_dynamic"
     instruction_type: str = "unseen"
     seed: int = 42
-    ckpt_path: Path = Path("checkpoints/internvla_a1_5/pretrained_model")
+    ckpt_path: Path = Path("InternRobotics/InternVLA-A1.5-DOMINO")
     stats_key: str = "aloha"
     resize_size: int = 224
     image_history_interval: int = 15
