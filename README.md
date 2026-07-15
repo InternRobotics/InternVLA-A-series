@@ -111,6 +111,16 @@ Please refer to the evaluation guides for the complete inference and benchmark w
 
 For open-loop action prediction on LeRobot-format data, see [`tests/openloop_internvla_a1_5.py`](tests/openloop_internvla_a1_5.py).
 
+### Real-robot inference
+
+For real-robot deployment, we recommend using the optimized action-only inference backend. After loading the InternVLA-A1.5 config and before constructing the policy, add:
+
+```python
+config.inference_backend, config.action_loss_only = "optimized", True
+```
+
+This skips WAN video-branch loading and uses the low-latency optimized backend for action prediction. Keep the standard backend only when you need future-video visualization or WAN-related inference outputs.
+
 ## License and Citation
 
 All code within this repo is released under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Please consider citing our project if it helps your research.
