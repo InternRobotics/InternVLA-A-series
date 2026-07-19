@@ -126,11 +126,11 @@ This skips WAN video-branch loading and uses the low-latency optimized backend f
 All code within this repo is released under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Please consider citing our project if it helps your research.
 
 ```BibTeX
-@misc{internvla_a15,
-  title        = {InternVLA-A1.5: Unifying Understanding, Latent Foresight, and Action for Compositional Generalization},
-  author       = {InternVLA-A1.5 team},
-  year         = {2026},
-  howpublished = {\url{https://github.com/InternRobotics/InternVLA-A1.5}}
+@article{internvla_a15,
+  title={InternVLA-A1.5: Unifying Understanding, Latent Foresight, and Action for Compositional Generalization},
+  author={Ma, Haoxiang and Cai, Junhao and Xu, Xiaoxu and Li, Hao and Yang, Yuyin and Tian, Yang and Cao, Jiafei and Zhu, Hongrui and Qiu, Zherui and others},
+  journal={arXiv preprint arXiv:2607.04988}
+  year={2026},
 }
 
 @article{internvla_a1,
