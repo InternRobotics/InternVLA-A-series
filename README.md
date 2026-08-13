@@ -61,6 +61,21 @@ We recommend using **conda** to create an isolated environment.
 
 Please refer to the [Installation Tutorial](tutorials/installation.md) to prepare your environment, install dependencies, and patch the required HuggingFace Transformers modules for Qwen3.5 and the robot-learning policies.
 
+Galaxea G0.5 is also available as `policy.type=g05` in this same training
+framework. It reuses the LeRobot datasets, transforms, Accelerate/DDP loop,
+optimizer, logging, and checkpoints while loading the official G0.5 model and
+ActionCodec as an optional dependency. See the
+[G0.5 fine-tuning tutorial](tutorials/finetune_g05_in_internvla.md); use its
+dedicated Python 3.10 environment because the official dependency versions
+differ from the InternVLA-A1.5 environment.
+
+LingBot-VLA 2.0 is available alongside it as `policy.type=lingbot_vla_2`. The
+adapter keeps the official Qwen3-VL-4B + sparse-MoE flow-matching model and 55D
+canonical action representation, while reusing this repository's LeRobot data,
+Accelerate training, logging, optimizer/scheduler, and checkpoint pipeline. See
+the [LingBot-VLA 2.0 fine-tuning tutorial](tutorials/finetune_lingbot_vla_2_in_internvla.md);
+it uses a dedicated Python 3.12 / PyTorch 2.8 / Transformers 4.57.3 environment.
+
 ---
 
 ## Playground

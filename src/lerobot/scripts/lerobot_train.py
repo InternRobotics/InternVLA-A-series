@@ -284,7 +284,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
 
     policy.train()
 
-    if cfg.policy.type == "internvla_a1_5":
+    if cfg.policy.type in {"internvla_a1_5", "g05", "lingbot_vla_2"}:
         train_metrics = {
             "loss": AverageMeter("loss", ":.3f"),
             "loss_action": AverageMeter("loss_action", ":.3f"),
