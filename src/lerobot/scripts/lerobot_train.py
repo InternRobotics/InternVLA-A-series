@@ -16,6 +16,7 @@
 import logging
 import time
 from contextlib import nullcontext
+from dataclasses import replace
 from pprint import pformat
 from typing import Any
 
@@ -126,6 +127,10 @@ def update_policy(
         train_metrics.loss_fast = output_dict["loss_fast"]
     if "loss_subtask" in output_dict:
         train_metrics.loss_subtask = output_dict["loss_subtask"]
+    if "loss_opd" in output_dict:
+        train_metrics.loss_opd = output_dict["loss_opd"]
+    if "loss_rl" in output_dict:
+        train_metrics.loss_rl = output_dict["loss_rl"]
     train_metrics.grad_norm = grad_norm.item()
     train_metrics.lr = optimizer.param_groups[0]["lr"]
     train_metrics.update_s = time.perf_counter() - start_time
@@ -215,6 +220,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
 
     accelerator.wait_for_everyone()
 
+    # Keep this rank's stats for teacher-action projection. Non-main ranks
+    # intentionally drop the merged stats later because only rank 0 saves them.
+    opd_data_stats = data_stats
+
     if accelerator.num_processes>1:
         all_data_stats = gather_object(data_stats, accelerator)
     else:
@@ -282,6 +291,33 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         )
     dl_iter = cycle(dataloader)
 
+    opd_teacher = None
+    if cfg.opd.enable:
+        from lerobot.opd.kairos_teacher import KairosOPDTeacher
+
+        # A single Kairos service is normally shared by all local ranks. Avoid
+        # reloading the large engine once per GPU; every rank still gets a client.
+        if is_main_process:
+            logging.info("Connecting to Kairos OPD teacher and loading its inference engine")
+            opd_teacher = KairosOPDTeacher(
+                cfg.opd,
+                data_stats=opd_data_stats,
+                action_mode=cfg.dataset.action_mode,
+                chunk_size=cfg.policy.chunk_size,
+                max_action_dim=cfg.policy.max_action_dim,
+            )
+        accelerator.wait_for_everyone()
+        if not is_main_process:
+            rank_opd_cfg = replace(cfg.opd, load_teacher_on_init=False)
+            opd_teacher = KairosOPDTeacher(
+                rank_opd_cfg,
+                data_stats=opd_data_stats,
+                action_mode=cfg.dataset.action_mode,
+                chunk_size=cfg.policy.chunk_size,
+                max_action_dim=cfg.policy.max_action_dim,
+            )
+        accelerator.wait_for_everyone()
+
     policy.train()
 
     if cfg.policy.type in {"internvla_a1_5", "g05", "lingbot_vla_2"}:
@@ -312,6 +348,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     if cfg.policy.type == "internvla_a1_5":
         train_metrics["loss_fast"] = AverageMeter("loss_fast", ":.3f")
         train_metrics["loss_subtask"] = AverageMeter("loss_subtask", ":.3f")
+    if cfg.opd.enable:
+        train_metrics["loss_opd"] = AverageMeter("loss_opd", ":.3f")
+    if cfg.rl.enable:
+        train_metrics["loss_rl"] = AverageMeter("loss_rl", ":.3f")
 
 
     # Use effective batch size for proper epoch calculation in distributed training
@@ -326,7 +366,8 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     )
 
     if is_main_process:
-        logging.info("Start offline training on a fixed dataset")
+        training_mode = "student rollout RL" if cfg.rl.enable else "offline"
+        logging.info(f"Start {training_mode} training on a fixed dataset")
         training_start_time = time.perf_counter()
 
     for _ in range(step, cfg.steps):
@@ -335,6 +376,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         if cfg.dataset.dist_loading or dl_self_managed:
             batch = send_to_device(batch, accelerator.device, non_blocking=True)
         train_tracker.dataloading_s = time.perf_counter() - start_time
+
+        teacher_metrics = {}
+        if opd_teacher is not None:
+            teacher_metrics = opd_teacher.label_batch(batch, device=accelerator.device)
 
         train_tracker, output_dict = update_policy(
             train_tracker,
@@ -345,6 +390,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
             accelerator=accelerator,
             lr_scheduler=lr_scheduler,
         )
+        output_dict.update(teacher_metrics)
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.

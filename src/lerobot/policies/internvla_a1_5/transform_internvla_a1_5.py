@@ -18,6 +18,14 @@ from transformers.utils import cached_file
 from lerobot.dataset_schemas import get_schema
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.streaming_dataset import StreamingLeRobotDataset
+from lerobot.opd import (
+    OPD_IMAGE_MASK,
+    OPD_IMAGE_PREFIX,
+    OPD_IS_ON_POLICY,
+    OPD_RAW_STATE,
+    OPD_ROBOT_TYPE,
+    OPD_TASK,
+)
 from lerobot.policies.internvla_a1_5.action_tokens import ensure_qwen35_action_tokens
 from lerobot.transforms.constants import DEFAULT_IMAGE_TOKEN, SYSTEM_MESSAGE
 from lerobot.transforms.core import DataDict, DataTransformFn
@@ -27,6 +35,67 @@ LABEL_MODE_NONE = 0
 LABEL_MODE_TEXT = 1
 LABEL_MODE_FAST = 2
 LABEL_MODE_BOTH = 3
+
+
+@DataTransformFn.register_subclass("capture_opd_inputs")
+@dataclass
+class CaptureOPDInputsTransformFn(DataTransformFn):
+    """Keep raw state, camera views, and task text for a remote OPD teacher.
+
+    This transform must run before delta conversion, normalization, image
+    remapping, or the final unifying transform.
+    """
+
+    is_on_policy: bool = False
+    max_views: int = 3
+    state_keys: list[str] | None = None
+    image_keys: list[str] | None = None
+    robot_type: str = ""
+    task_key: str = "task"
+
+    def hydrate(
+        self, dataset: LeRobotDataset | StreamingLeRobotDataset
+    ) -> CaptureOPDInputsTransformFn:
+        schema = get_schema(dataset.meta.robot_type).resolve()
+        return replace(
+            self,
+            state_keys=schema.get_state_keys(),
+            image_keys=list(schema.image_mapping),
+            robot_type=dataset.meta.robot_type,
+        )
+
+    @staticmethod
+    def _align_for_cat(tensors: list[torch.Tensor]) -> list[torch.Tensor]:
+        max_ndim = max(tensor.ndim for tensor in tensors)
+        return [tensor if tensor.ndim == max_ndim else tensor.unsqueeze(-1) for tensor in tensors]
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if not self.state_keys or not self.image_keys or not self.robot_type:
+            raise RuntimeError("CaptureOPDInputsTransformFn must be hydrated with a dataset")
+        missing_state = [key for key in self.state_keys if key not in data]
+        missing_images = [key for key in self.image_keys if key not in data]
+        if missing_state or missing_images:
+            raise KeyError(
+                f"Cannot capture OPD inputs; missing state={missing_state}, images={missing_images}"
+            )
+
+        state_parts = self._align_for_cat([data[key] for key in self.state_keys])
+        data[OPD_RAW_STATE] = torch.cat(state_parts, dim=-1).detach().clone().float()
+
+        valid_views = min(len(self.image_keys), self.max_views)
+        first_image = data[self.image_keys[0]]
+        for view_index in range(self.max_views):
+            image = data[self.image_keys[view_index]] if view_index < valid_views else first_image
+            if image.ndim == 4:  # image_delta_indices yields [T,C,H,W]; teacher uses current frame
+                image = image[0]
+            data[f"{OPD_IMAGE_PREFIX}{view_index}"] = image.detach().clone()
+        data[OPD_IMAGE_MASK] = torch.tensor(
+            [view_index < valid_views for view_index in range(self.max_views)], dtype=torch.bool
+        )
+        data[OPD_TASK] = str(data.get(self.task_key, ""))
+        data[OPD_ROBOT_TYPE] = self.robot_type
+        data[OPD_IS_ON_POLICY] = torch.tensor(self.is_on_policy, dtype=torch.bool)
+        return data
 
 
 def _fast_processor_kwargs(model_name_or_path: str) -> dict[str, str]:

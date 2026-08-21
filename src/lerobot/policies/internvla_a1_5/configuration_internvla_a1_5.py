@@ -8,11 +8,21 @@ from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.optim.optimizers import AdamWConfig
 from lerobot.optim.schedulers import CosineDecayWithWarmupSchedulerConfig
 from lerobot.policies.internvla_a1_5.transform_internvla_a1_5 import (
+    CaptureOPDInputsTransformFn,
     ExtractVideoFramesTransformFn,
     FASTInternVLAA15ActionTokenizerTransformFn,
     InternVLAA15ChatProcessorTransformFn,
     InternVLAA15VQAProcessorTransformFn,
 )
+from lerobot.opd import (
+    OPD_IMAGE_MASK,
+    OPD_IMAGE_PREFIX,
+    OPD_IS_ON_POLICY,
+    OPD_RAW_STATE,
+    OPD_ROBOT_TYPE,
+    OPD_TASK,
+)
+from lerobot.rl import RL_ADVANTAGE, RL_IS_ON_POLICY, RL_REWARD, RL_REWARD_MASK
 from lerobot.transforms.core import *
 from lerobot.utils.constants import HF_HOME, OBS_IMAGES
 
@@ -32,6 +42,12 @@ class InternVLAA15DatasetConfig(DatasetConfig):
     num_video_frames: int = 4
     video_height: int = 224
     video_width: int = 224
+    include_opd_inputs: bool = False
+    opd_rollout_dataset: bool = False
+    opd_num_views: int = 3
+    include_rl_signals: bool = False
+    rl_rollout_dataset: bool = False
+    rl_advantage_key: str | None = None
 
     data_transforms: TransformGroup = field(
         default_factory=lambda: TransformGroup(
@@ -65,7 +81,18 @@ class InternVLAA15DatasetConfig(DatasetConfig):
 
     def __post_init__(self):
         super().__post_init__()
+        if self.opd_num_views < 1:
+            raise ValueError("opd_num_views must be >= 1")
         inputs = list(self.data_transforms.inputs)
+        inputs = [t for t in inputs if not isinstance(t, CaptureOPDInputsTransformFn)]
+        if self.include_opd_inputs:
+            inputs.insert(
+                0,
+                CaptureOPDInputsTransformFn(
+                    is_on_policy=self.opd_rollout_dataset,
+                    max_views=self.opd_num_views,
+                ),
+            )
         has_delta = any(isinstance(t, DeltaActionTransformFn) for t in inputs)
         if self.action_mode == "delta" and not has_delta:
             logging.info("action_mode='delta' -> Adding DeltaActionTransformFn")
@@ -99,6 +126,16 @@ class InternVLAA15DatasetConfig(DatasetConfig):
                 t.chunk_size = self.chunk_size
                 break
 
+        for index, transform in enumerate(inputs):
+            if isinstance(transform, UnifyInternVLAA15InputsTransformFn):
+                inputs[index] = replace(
+                    transform,
+                    include_opd_inputs=self.include_opd_inputs,
+                    include_rl_signals=self.include_rl_signals,
+                    rl_is_on_policy=self.rl_rollout_dataset,
+                    rl_advantage_key=self.rl_advantage_key,
+                )
+
         self.data_transforms = replace(self.data_transforms, inputs=inputs)
 
 
@@ -114,6 +151,10 @@ class UnifyInternVLAA15InputsTransformFn(DataTransformFn):
     num_video_frames: int = 4
     video_height: int = 224
     video_width: int = 224
+    include_opd_inputs: bool = False
+    include_rl_signals: bool = False
+    rl_is_on_policy: bool = False
+    rl_advantage_key: str | None = None
 
     def __call__(self, data: DataDict) -> DataDict:
         from lerobot.utils.constants import OBS_STATE, ACTION, OBS_STR
@@ -135,7 +176,7 @@ class UnifyInternVLAA15InputsTransformFn(DataTransformFn):
                 self.num_video_frames + 1, 3, self.video_height, self.video_width
             )
 
-        return {
+        output = {
             OBS_STATE: data[OBS_STATE],
             ACTION: data[ACTION],
             f"{OBS_STR}.pixel_values": data[f"{OBS_STR}.pixel_values"],
@@ -148,6 +189,43 @@ class UnifyInternVLAA15InputsTransformFn(DataTransformFn):
             "label_mode": label_mode,
             video_key: video_frames,
         }
+        if self.include_opd_inputs:
+            for key in (
+                OPD_RAW_STATE,
+                OPD_IMAGE_MASK,
+                OPD_TASK,
+                OPD_ROBOT_TYPE,
+                OPD_IS_ON_POLICY,
+            ):
+                output[key] = data[key]
+            for view_index in range(data[OPD_IMAGE_MASK].numel()):
+                key = f"{OPD_IMAGE_PREFIX}{view_index}"
+                output[key] = data[key]
+        if self.include_rl_signals:
+            from lerobot.utils.constants import REWARD
+
+            if REWARD not in data:
+                raise KeyError(
+                    f"RL training requires {REWARD!r} in the student rollout dataset"
+                )
+            rewards = torch.as_tensor(data[REWARD], dtype=torch.float32)
+            is_pad = data.get(f"{REWARD}_is_pad")
+            if is_pad is None:
+                reward_mask = torch.ones_like(rewards, dtype=torch.bool)
+            else:
+                reward_mask = ~torch.as_tensor(is_pad, dtype=torch.bool)
+            output[RL_REWARD] = rewards
+            output[RL_REWARD_MASK] = reward_mask
+            output[RL_IS_ON_POLICY] = torch.tensor(self.rl_is_on_policy, dtype=torch.bool)
+            if self.rl_advantage_key is not None:
+                if self.rl_advantage_key not in data:
+                    raise KeyError(
+                        f"Configured RL advantage key {self.rl_advantage_key!r} is missing"
+                    )
+                output[RL_ADVANTAGE] = torch.as_tensor(
+                    data[self.rl_advantage_key], dtype=torch.float32
+                )
+        return output
 
 
 @DataTransformFn.register_subclass("unify_internvla_a1_5_vqa_inputs")
@@ -343,6 +421,25 @@ class InternVLAA15Config(PreTrainedConfig):
     action_loss_only: bool = False
     freeze_learnable_tokens: bool = False
 
+    # Continuous-action OPD. These values are populated from TrainPipelineConfig.opd.
+    opd_enabled: bool = False
+    opd_loss_weight: float = 1.0
+    opd_sft_loss_weight: float = 0.0
+    opd_student_std: float = 0.10
+    opd_max_kl_per_dim: float | None = 20.0
+
+    # Reward-weighted flow matching reinforcement learning.
+    rl_enabled: bool = False
+    rl_gamma: float = 0.99
+    rl_reward_horizon: int | None = None
+    rl_normalize_advantage: bool = True
+    rl_temperature: float = 1.0
+    rl_min_weight: float = 0.05
+    rl_max_weight: float = 20.0
+    rl_loss_weight: float = 1.0
+    rl_sft_loss_weight: float = 0.1
+    rl_require_on_policy: bool = True
+
     def __post_init__(self):
         super().__post_init__()
 
@@ -366,6 +463,24 @@ class InternVLAA15Config(PreTrainedConfig):
             )
         if self.inference_backend == "optimized" and not self.action_loss_only:
             raise ValueError("inference_backend='optimized' requires action_loss_only=True")
+        if self.opd_loss_weight < 0 or self.opd_sft_loss_weight < 0:
+            raise ValueError("OPD loss weights must be non-negative")
+        if self.opd_student_std <= 0:
+            raise ValueError("opd_student_std must be > 0")
+        if self.opd_enabled and self.video_loss_only:
+            raise ValueError("OPD requires action prediction, so video_loss_only must be false")
+        if self.opd_enabled and self.inference_backend == "optimized":
+            raise ValueError("OPD training currently requires inference_backend='standard'")
+        if self.rl_temperature <= 0:
+            raise ValueError("rl_temperature must be > 0")
+        if not 0 <= self.rl_min_weight <= self.rl_max_weight or self.rl_max_weight == 0:
+            raise ValueError("Require 0 <= rl_min_weight <= rl_max_weight and rl_max_weight > 0")
+        if self.rl_loss_weight < 0 or self.rl_sft_loss_weight < 0:
+            raise ValueError("RL loss weights must be non-negative")
+        if self.rl_enabled and self.video_loss_only:
+            raise ValueError("RL requires action prediction, so video_loss_only must be false")
+        if self.rl_enabled and self.inference_backend == "optimized":
+            raise ValueError("RL training currently requires inference_backend='standard'")
 
     def validate_features(self) -> None:
         """Validate and set up input/output features."""
@@ -417,8 +532,11 @@ class InternVLAA15Config(PreTrainedConfig):
         return list(range(self.chunk_size))
 
     @property
-    def reward_delta_indices(self) -> None:
-        return None
+    def reward_delta_indices(self) -> list | None:
+        if not self.rl_enabled:
+            return None
+        horizon = self.rl_reward_horizon or self.chunk_size
+        return list(range(horizon))
 
     @property
     def image_delta_indices(self) -> list | None:
