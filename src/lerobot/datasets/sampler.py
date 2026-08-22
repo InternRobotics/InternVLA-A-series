@@ -13,13 +13,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from collections.abc import Iterator
-
 import math
+from collections.abc import Hashable, Iterator, Sequence
+from typing import List, Optional
+
 import torch
 import torch.distributed as dist
 from torch.utils.data import Sampler
-from typing import Iterator, List, Optional
 
 from lerobot.datasets.transformed_dataset import MultiLeRobotDataset
 from lerobot.datasets.vqa_dataset import MixedMultimodalDataset
@@ -154,6 +154,66 @@ class DistributedEpisodeAwareSampler(Sampler[int]):
             return n // self.world_size
         else:
             return math.ceil(n / self.world_size)
+
+
+class GroupedBatchSampler(Sampler[list[int]]):
+    """Shuffle complete rollout groups without splitting them across batches."""
+
+    def __init__(
+        self,
+        group_ids: Sequence[Hashable],
+        *,
+        group_size: int,
+        batch_size: int,
+        shuffle: bool = True,
+        seed: int = 0,
+    ) -> None:
+        if group_size < 2:
+            raise ValueError("group_size must be >= 2")
+        if batch_size < group_size or batch_size % group_size != 0:
+            raise ValueError("batch_size must be a positive multiple of group_size")
+        self.group_size = group_size
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.groups_per_batch = batch_size // group_size
+        groups: dict[Hashable, list[int]] = {}
+        for index, group_id in enumerate(group_ids):
+            try:
+                groups.setdefault(group_id, []).append(index)
+            except TypeError as exc:
+                raise TypeError(f"GRPO group id at index {index} is not hashable") from exc
+        invalid = [
+            (group_id, len(indices))
+            for group_id, indices in groups.items()
+            if len(indices) != group_size
+        ]
+        if invalid:
+            group_id, count = invalid[0]
+            raise ValueError(
+                f"GRPO group {group_id!r} contains {count} dataset samples; expected {group_size}"
+            )
+        self.groups = list(groups.values())
+        self.num_groups = len(self.groups)
+        self._generator = torch.Generator()
+        self._generator.manual_seed(seed)
+
+    def __iter__(self) -> Iterator[list[int]]:
+        if self.shuffle:
+            group_order = torch.randperm(self.num_groups, generator=self._generator).tolist()
+        else:
+            group_order = list(range(self.num_groups))
+
+        for offset in range(0, self.num_groups, self.groups_per_batch):
+            selected = group_order[offset : offset + self.groups_per_batch]
+            if len(selected) != self.groups_per_batch:
+                break
+            batch: list[int] = []
+            for group_index in selected:
+                batch.extend(self.groups[group_index])
+            yield batch
+
+    def __len__(self) -> int:
+        return self.num_groups // self.groups_per_batch
 
 
 class MultiLeRobotWeightedSampler(Sampler[int]):

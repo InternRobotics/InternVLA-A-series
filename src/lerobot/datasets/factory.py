@@ -44,7 +44,11 @@ from lerobot.datasets.vqa_dataset import (
     MultiVQADataset,
     MixedMultimodalDataset,
 )
-from lerobot.datasets.sampler import MultiLeRobotWeightedSampler, MultiMixedWeightedSampler
+from lerobot.datasets.sampler import (
+    GroupedBatchSampler,
+    MultiLeRobotWeightedSampler,
+    MultiMixedWeightedSampler,
+)
 
 from lerobot.dataset_schemas import get_schema
 
@@ -569,6 +573,30 @@ def make_dataset(cfg: TrainPipelineConfig):
     return robot_ds, all_data_stats
 
 
+def _get_grpo_group_ids(dataset, group_id_key: str) -> list[int]:
+    """Read lightweight group identifiers without running image/text transforms."""
+
+    if isinstance(dataset, MultiLeRobotDataset):
+        raise ValueError("GRPO currently requires exactly one rollout dataset")
+    if not hasattr(dataset, "hf_dataset") or dataset.hf_dataset is None:
+        raise ValueError("GRPO requires a map-style LeRobot dataset with loaded metadata")
+    if group_id_key not in dataset.hf_dataset.features:
+        raise KeyError(
+            f"GRPO group id field {group_id_key!r} is missing from {dataset.repo_id!r}"
+        )
+
+    group_ids: list[int] = []
+    for value in dataset.hf_dataset[group_id_key]:
+        if hasattr(value, "item"):
+            value = value.item()
+        try:
+            numeric_id = int(value)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"GRPO group ids must be integer-compatible, got {value!r}") from exc
+        group_ids.append(numeric_id)
+    return group_ids
+
+
 def make_dataloader(
     cfg: TrainPipelineConfig,
     dataset,
@@ -589,6 +617,27 @@ def make_dataloader(
         and bool(getattr(cfg.policy, "enable_vqa_loss", False))
     )
     collate_fn = _multimodal_collate # if use_mm_collate else None
+
+    if cfg.rl.enable and cfg.rl.algorithm == "grpo":
+        if hasattr(dataset, "dataset_weights") and dataset.dataset_weights is not None:
+            raise ValueError("GRPO grouped batching is incompatible with weighted dataset sampling")
+        group_ids = _get_grpo_group_ids(dataset, cfg.dataset.rl_group_id_key)
+        batch_sampler = GroupedBatchSampler(
+            group_ids,
+            group_size=cfg.rl.group_size,
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            seed=cfg.seed or 0,
+        )
+        dl = torch.utils.data.DataLoader(
+            dataset,
+            num_workers=num_workers,
+            batch_sampler=batch_sampler,
+            collate_fn=collate_fn,
+            pin_memory=True,
+            prefetch_factor=prefetch,
+        )
+        return dl, False
 
     if (
         not cfg.dataset.streaming

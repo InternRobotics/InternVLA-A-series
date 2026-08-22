@@ -27,6 +27,8 @@ from lerobot.configs.default import DatasetConfig, EvalConfig, VQADatasetConfig,
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.optim import OptimizerConfig
 from lerobot.optim.schedulers import LRSchedulerConfig
+from lerobot.opd import OPDConfig
+from lerobot.rl import FlowRLConfig
 from lerobot.utils.hub import HubMixin
 
 TRAIN_CONFIG_NAME = "train_config.json"
@@ -63,6 +65,8 @@ class TrainPipelineConfig(HubMixin):
     scheduler: LRSchedulerConfig | None = None
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
+    opd: OPDConfig = field(default_factory=OPDConfig)
+    rl: FlowRLConfig = field(default_factory=FlowRLConfig)
     checkpoint_path: Path | None = field(init=False, default=None)
     # Rename map for the observation to override the image and state keys
     rename_map: dict[str, str] = field(default_factory=dict)
@@ -98,6 +102,86 @@ class TrainPipelineConfig(HubMixin):
             raise ValueError(
                 "Policy is not configured. Please specify a pretrained policy with `--policy.path`."
             )
+
+        self.opd.validate()
+        if hasattr(self.policy, "opd_enabled"):
+            # The top-level OPD config is authoritative, including when an OPD
+            # checkpoint is reused for ordinary supervised fine-tuning.
+            self.policy.opd_enabled = False
+        if self.opd.enable:
+            if self.policy.type != "internvla_a1_5":
+                raise ValueError("OPD with a Kairos teacher currently supports only internvla_a1_5")
+            if not getattr(self.dataset, "include_opd_inputs", False):
+                raise ValueError("OPD requires dataset.include_opd_inputs=true")
+            if self.opd.require_on_policy and not getattr(
+                self.dataset, "opd_rollout_dataset", False
+            ):
+                raise ValueError(
+                    "OPD requires a student rollout dataset; set dataset.opd_rollout_dataset=true "
+                    "only for data actually collected by the current student"
+                )
+            if self.vqa_dataset is not None and self.vqa_dataset.repo_id:
+                raise ValueError("OPD does not support mixed VQA batches; disable vqa_dataset")
+            if getattr(self.policy, "video_loss_only", False):
+                raise ValueError("OPD requires policy.video_loss_only=false")
+            if getattr(self.policy, "inference_backend", "standard") != "standard":
+                raise ValueError("OPD training currently requires inference_backend='standard'")
+            self.policy.opd_enabled = True
+            self.policy.opd_loss_weight = self.opd.loss_weight
+            self.policy.opd_sft_loss_weight = self.opd.sft_loss_weight
+            self.policy.opd_student_std = self.opd.student_std
+            self.policy.opd_max_kl_per_dim = self.opd.max_kl_per_dim
+
+        self.rl.validate()
+        if hasattr(self.policy, "rl_enabled"):
+            self.policy.rl_enabled = False
+        if self.rl.enable:
+            if self.policy.type != "internvla_a1_5":
+                raise ValueError("Flow RL currently supports only internvla_a1_5")
+            if self.dataset is None or not getattr(self.dataset, "include_rl_signals", False):
+                raise ValueError("RL requires dataset.include_rl_signals=true")
+            if self.rl.require_on_policy and not getattr(
+                self.dataset, "rl_rollout_dataset", False
+            ):
+                raise ValueError(
+                    "RL requires data collected by the current student; set "
+                    "dataset.rl_rollout_dataset=true only for genuine student rollouts"
+                )
+            if self.vqa_dataset is not None and self.vqa_dataset.repo_id:
+                raise ValueError("RL does not support mixed VQA batches; disable vqa_dataset")
+            if getattr(self.policy, "video_loss_only", False):
+                raise ValueError("RL requires policy.video_loss_only=false")
+            if getattr(self.policy, "inference_backend", "standard") != "standard":
+                raise ValueError("RL training currently requires inference_backend='standard'")
+            if self.rl.algorithm == "grpo":
+                if not getattr(self.dataset, "rl_group_id_key", None):
+                    raise ValueError(
+                        "GRPO requires dataset.rl_group_id_key to identify rollouts "
+                        "sampled for the same observation and task"
+                    )
+                if getattr(self.dataset, "rl_advantage_key", None) is not None:
+                    raise ValueError(
+                        "GRPO computes group-relative advantages from rewards; "
+                        "do not set dataset.rl_advantage_key"
+                    )
+                if getattr(self.dataset, "streaming", False):
+                    raise ValueError("GRPO currently requires a non-streaming grouped dataset")
+                if self.batch_size % self.rl.group_size != 0:
+                    raise ValueError(
+                        "GRPO batch_size must be divisible by rl.group_size so groups are not split"
+                    )
+            self.policy.rl_enabled = True
+            self.policy.rl_algorithm = self.rl.algorithm
+            self.policy.rl_gamma = self.rl.gamma
+            self.policy.rl_reward_horizon = self.rl.reward_horizon
+            self.policy.rl_normalize_advantage = self.rl.normalize_advantage
+            self.policy.rl_temperature = self.rl.temperature
+            self.policy.rl_min_weight = self.rl.min_weight
+            self.policy.rl_max_weight = self.rl.max_weight
+            self.policy.rl_loss_weight = self.rl.loss_weight
+            self.policy.rl_sft_loss_weight = self.rl.sft_loss_weight
+            self.policy.rl_require_on_policy = self.rl.require_on_policy
+            self.policy.rl_group_size = self.rl.group_size
 
         if not self.job_name:
             self.job_name = f"{self.policy.type}"
