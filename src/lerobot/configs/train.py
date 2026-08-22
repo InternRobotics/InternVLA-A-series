@@ -153,7 +153,25 @@ class TrainPipelineConfig(HubMixin):
                 raise ValueError("RL requires policy.video_loss_only=false")
             if getattr(self.policy, "inference_backend", "standard") != "standard":
                 raise ValueError("RL training currently requires inference_backend='standard'")
+            if self.rl.algorithm == "grpo":
+                if not getattr(self.dataset, "rl_group_id_key", None):
+                    raise ValueError(
+                        "GRPO requires dataset.rl_group_id_key to identify rollouts "
+                        "sampled for the same observation and task"
+                    )
+                if getattr(self.dataset, "rl_advantage_key", None) is not None:
+                    raise ValueError(
+                        "GRPO computes group-relative advantages from rewards; "
+                        "do not set dataset.rl_advantage_key"
+                    )
+                if getattr(self.dataset, "streaming", False):
+                    raise ValueError("GRPO currently requires a non-streaming grouped dataset")
+                if self.batch_size % self.rl.group_size != 0:
+                    raise ValueError(
+                        "GRPO batch_size must be divisible by rl.group_size so groups are not split"
+                    )
             self.policy.rl_enabled = True
+            self.policy.rl_algorithm = self.rl.algorithm
             self.policy.rl_gamma = self.rl.gamma
             self.policy.rl_reward_horizon = self.rl.reward_horizon
             self.policy.rl_normalize_advantage = self.rl.normalize_advantage
@@ -163,6 +181,7 @@ class TrainPipelineConfig(HubMixin):
             self.policy.rl_loss_weight = self.rl.loss_weight
             self.policy.rl_sft_loss_weight = self.rl.sft_loss_weight
             self.policy.rl_require_on_policy = self.rl.require_on_policy
+            self.policy.rl_group_size = self.rl.group_size
 
         if not self.job_name:
             self.job_name = f"{self.policy.type}"

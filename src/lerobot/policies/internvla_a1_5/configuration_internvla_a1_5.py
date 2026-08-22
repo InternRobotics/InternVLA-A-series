@@ -22,7 +22,7 @@ from lerobot.opd import (
     OPD_ROBOT_TYPE,
     OPD_TASK,
 )
-from lerobot.rl import RL_ADVANTAGE, RL_IS_ON_POLICY, RL_REWARD, RL_REWARD_MASK
+from lerobot.rl import RL_ADVANTAGE, RL_GROUP_ID, RL_IS_ON_POLICY, RL_REWARD, RL_REWARD_MASK
 from lerobot.transforms.core import *
 from lerobot.utils.constants import HF_HOME, OBS_IMAGES
 
@@ -48,6 +48,7 @@ class InternVLAA15DatasetConfig(DatasetConfig):
     include_rl_signals: bool = False
     rl_rollout_dataset: bool = False
     rl_advantage_key: str | None = None
+    rl_group_id_key: str | None = None
 
     data_transforms: TransformGroup = field(
         default_factory=lambda: TransformGroup(
@@ -134,6 +135,7 @@ class InternVLAA15DatasetConfig(DatasetConfig):
                     include_rl_signals=self.include_rl_signals,
                     rl_is_on_policy=self.rl_rollout_dataset,
                     rl_advantage_key=self.rl_advantage_key,
+                    rl_group_id_key=self.rl_group_id_key,
                 )
 
         self.data_transforms = replace(self.data_transforms, inputs=inputs)
@@ -155,6 +157,7 @@ class UnifyInternVLAA15InputsTransformFn(DataTransformFn):
     include_rl_signals: bool = False
     rl_is_on_policy: bool = False
     rl_advantage_key: str | None = None
+    rl_group_id_key: str | None = None
 
     def __call__(self, data: DataDict) -> DataDict:
         from lerobot.utils.constants import OBS_STATE, ACTION, OBS_STR
@@ -224,6 +227,14 @@ class UnifyInternVLAA15InputsTransformFn(DataTransformFn):
                     )
                 output[RL_ADVANTAGE] = torch.as_tensor(
                     data[self.rl_advantage_key], dtype=torch.float32
+                )
+            if self.rl_group_id_key is not None:
+                if self.rl_group_id_key not in data:
+                    raise KeyError(
+                        f"Configured RL group id key {self.rl_group_id_key!r} is missing"
+                    )
+                output[RL_GROUP_ID] = torch.as_tensor(
+                    data[self.rl_group_id_key], dtype=torch.long
                 )
         return output
 
@@ -428,8 +439,9 @@ class InternVLAA15Config(PreTrainedConfig):
     opd_student_std: float = 0.10
     opd_max_kl_per_dim: float | None = 20.0
 
-    # Reward-weighted flow matching reinforcement learning.
+    # RWFM or group-relative flow-matching reinforcement learning.
     rl_enabled: bool = False
+    rl_algorithm: str = "rwfm"
     rl_gamma: float = 0.99
     rl_reward_horizon: int | None = None
     rl_normalize_advantage: bool = True
@@ -439,6 +451,7 @@ class InternVLAA15Config(PreTrainedConfig):
     rl_loss_weight: float = 1.0
     rl_sft_loss_weight: float = 0.1
     rl_require_on_policy: bool = True
+    rl_group_size: int = 4
 
     def __post_init__(self):
         super().__post_init__()
@@ -471,12 +484,16 @@ class InternVLAA15Config(PreTrainedConfig):
             raise ValueError("OPD requires action prediction, so video_loss_only must be false")
         if self.opd_enabled and self.inference_backend == "optimized":
             raise ValueError("OPD training currently requires inference_backend='standard'")
+        if self.rl_algorithm not in {"rwfm", "grpo"}:
+            raise ValueError("rl_algorithm must be 'rwfm' or 'grpo'")
         if self.rl_temperature <= 0:
             raise ValueError("rl_temperature must be > 0")
         if not 0 <= self.rl_min_weight <= self.rl_max_weight or self.rl_max_weight == 0:
             raise ValueError("Require 0 <= rl_min_weight <= rl_max_weight and rl_max_weight > 0")
         if self.rl_loss_weight < 0 or self.rl_sft_loss_weight < 0:
             raise ValueError("RL loss weights must be non-negative")
+        if self.rl_algorithm == "grpo" and self.rl_group_size < 2:
+            raise ValueError("rl_group_size must be >= 2")
         if self.rl_enabled and self.video_loss_only:
             raise ValueError("RL requires action prediction, so video_loss_only must be false")
         if self.rl_enabled and self.inference_backend == "optimized":

@@ -19,8 +19,11 @@ TEACHER_SAMPLES="${TEACHER_SAMPLES:-4}"
 STEPS="${STEPS:-60000}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 RL_ENABLE="${RL_ENABLE:-false}"
+RL_ALGORITHM="${RL_ALGORITHM:-rwfm}"
 RL_GAMMA="${RL_GAMMA:-0.99}"
 RL_TEMPERATURE="${RL_TEMPERATURE:-1.0}"
+RL_GROUP_SIZE="${RL_GROUP_SIZE:-4}"
+RL_GROUP_ID_KEY="${RL_GROUP_ID_KEY:-grpo_group_id}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -36,16 +39,26 @@ fi
 
 RL_ARGS=()
 if [[ "${RL_ENABLE}" == "true" ]]; then
+    if [[ "${RL_ALGORITHM}" != "rwfm" && "${RL_ALGORITHM}" != "grpo" ]]; then
+        echo "RL_ALGORITHM must be rwfm or grpo, got ${RL_ALGORITHM}"
+        exit 2
+    fi
     RL_ARGS+=(
         --dataset.include_rl_signals=true
         --dataset.rl_rollout_dataset=true
         --rl.enable=true
-        --rl.algorithm=rwfm
+        --rl.algorithm="${RL_ALGORITHM}"
         --rl.gamma="${RL_GAMMA}"
         --rl.temperature="${RL_TEMPERATURE}"
         --rl.loss_weight=1.0
         --rl.sft_loss_weight=0.1
     )
+    if [[ "${RL_ALGORITHM}" == "grpo" ]]; then
+        RL_ARGS+=(
+            --dataset.rl_group_id_key="${RL_GROUP_ID_KEY}"
+            --rl.group_size="${RL_GROUP_SIZE}"
+        )
+    fi
 fi
 
 accelerate launch "${ACCELERATE_ARGS[@]}" \

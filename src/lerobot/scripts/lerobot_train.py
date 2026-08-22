@@ -366,7 +366,9 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     )
 
     if is_main_process:
-        training_mode = "student rollout RL" if cfg.rl.enable else "offline"
+        training_mode = (
+            f"student rollout {cfg.rl.algorithm.upper()} RL" if cfg.rl.enable else "offline"
+        )
         logging.info(f"Start {training_mode} training on a fixed dataset")
         training_start_time = time.perf_counter()
 
