@@ -13,7 +13,39 @@
 
 ## Intel XPU Support
 
-InternVLA-A1 inference has been validated on Intel XPU (Intel GPUs) and runs **without any code changes** to this repository. Install a PyTorch build with Intel XPU support and select the `xpu` device at runtime.
+InternVLA-A1 inference has been validated on Intel GPUs through PyTorch XPU.
+The model and evaluation path are backend-safe: CUDA is used when available,
+then XPU, then CPU. No model code or configuration changes are needed to move
+between those backends.
+
+### Install for Intel GPUs
+
+The standard [Installation Tutorial](tutorials/installation.md) installs CUDA
+wheels. For an Intel GPU, replace its PyTorch installation step with the XPU
+build:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+```
+
+Then continue with the remaining dependency, transformer-patching, and
+editable-install steps in the tutorial. Do not install CUDA-only FlashAttention
+for an XPU-only environment. The model falls back to PyTorch's built-in
+attention implementation when FlashAttention is unavailable, which also keeps
+CPU inference available.
+
+### Run inference and evaluation
+
+Use the same model checkpoint and evaluation workflow described in
+[Evaluation & Inference](#section-Evaluation). Device placement is selected at
+runtime, so the same notebook or evaluation command can be used on CUDA, XPU,
+or CPU. When a local script asks for an explicit device, choose `xpu` for an
+Intel GPU; otherwise leave the device unset and use the repository's automatic
+selection.
+
+Outputs closely track the CUDA and CPU paths. Minor float32 flow-matching
+rounding differences are expected across backends and do not indicate a model
+or checkpoint error.
 
 ## 🔥 Highlights
 > **InternVLA-A1** unifies scene ***understanding***, visual foresight ***generation***, and ***action*** execution into a single framework.
